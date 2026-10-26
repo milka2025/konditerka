@@ -22,5 +22,5 @@ jobs:
         run: |
           docker build --tag konditerka:test .
           docker run -d --rm --name konditerka-smoke -e OWNER_EMAIL=test@example.com -e OWNER_PASSWORD="$(openssl rand -hex 24)" -e APP_ORIGIN=http://localhost:3000 -p 127.0.0.1:3000:3000 konditerka:test
-          trap 'docker rm -f konditerka-smoke' EXIT
-          curl --fail --retry 10 --retry-delay 1 --retry-connrefused http://localhost:3000/health
+          trap 'docker logs konditerka-smoke; docker rm -f konditerka-smoke' EXIT
+          curl --fail --retry 10 --retry-delay 1 --retry-all-errors --max-time 3 http://localhost:3000/health
