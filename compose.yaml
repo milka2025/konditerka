@@ -1,0 +1,15 @@
+services:
+  konditerka:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      OWNER_EMAIL: ${OWNER_EMAIL:?Укажите OWNER_EMAIL в .env}
+      OWNER_PASSWORD: ${OWNER_PASSWORD:?Укажите OWNER_PASSWORD в .env}
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
+      DATA_DIR: /data
+    volumes:
+      - konditerka-data:/data
+    restart: unless-stopped
+volumes:
+  konditerka-data:

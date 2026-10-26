@@ -1,0 +1,7 @@
+import {z} from 'zod';
+const str=z.string().max(100000);
+const quantity=z.number().finite().nonnegative();
+const ing=z.object({name:z.string().trim().min(1).max(500),qty:quantity,unit:z.string().min(1).max(50),note:str.optional()}).passthrough();
+const part=z.object({id:z.string().min(1),name:z.string().trim().min(1).max(500),ingredients:z.array(ing).max(500),steps:z.array(str).max(500),photos:z.array(z.string()).max(100).optional()}).passthrough();
+const base=z.object({id:z.string().min(1).max(100),kind:z.enum(['recipe','component','list','lab','settings']),name:z.string().trim().min(1).max(500),revision:z.number().int().positive().optional(),created:z.string(),updated:z.string()}).passthrough();
+export function validRecord(v:unknown){const result=base.safeParse(v);if(!result.success)return false;const r=result.data;if(['recipe','component'].includes(r.kind))return z.object({servings:z.number().positive().finite(),parts:z.array(part).max(100)}).safeParse(r).success;if(r.kind==='list')return z.object({items:z.array(z.object({id:z.string(),name:z.string().trim().min(1).max(500),qty:quantity,unit:z.string().min(1).max(50),have:quantity.optional(),bought:z.boolean()})).max(3000)}).safeParse(r).success;if(r.kind==='lab')return z.object({tests:z.array(z.object({id:z.string(),date:z.string()}).passthrough()).max(3000)}).safeParse(r).success;return ['categories','componentCategories','units'].every(key=>r[key]===undefined||z.array(z.string().trim().min(1).max(200)).max(200).safeParse(r[key]).success)}

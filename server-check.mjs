@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {mkdtemp,rm,readFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {randomBytes} from 'node:crypto';
+import {setTimeout as delay} from 'node:timers/promises';
+import {newRecord,aggregate} from './domain.ts';
+const dir=await mkdtemp(join(tmpdir(),'konditerka-test-'));const port=30000+Math.floor(Math.random()*15000);const base='http://127.0.0.1:'+port;const password=randomBytes(18).toString('hex');const changed=randomBytes(18).toString('hex');let child;let cookie='';let logs='';
+async function start(){child=spawn(process.execPath,['server.mjs'],{env:{...process.env,PORT:String(port),HOST:'127.0.0.1',DATA_DIR:dir,OWNER_EMAIL:'test@example.com',OWNER_PASSWORD:password,APP_ORIGIN:base,NODE_ENV:'test'},stdio:['ignore','pipe','pipe']});child.stdout.on('data',b=>logs+=b);child.stderr.on('data',b=>logs+=b);for(let i=0;i<100;i++){try{if((await fetch(base+'/health')).ok)return}catch{}if(child.exitCode!==null)throw Error(logs);await delay(50)}throw Error('Не удалось запустить сервер')}
+async function stop(){if(!child||child.exitCode!==null)return;await new Promise(resolve=>{child.once('exit',resolve);child.kill('SIGTERM')})}
+const request=(path,options={})=>fetch(base+path,{...options,headers:{Origin:base,Cookie:cookie,...options.headers},redirect:'manual'});
+async function login(p=password){const res=await request('/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:'test@example.com',password:p}).toString()});if(res.status===303)cookie=res.headers.get('set-cookie').split(';')[0];return res}
+async function save(v){const res=await request('/api/records',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(v)});return {status:res.status,body:await res.json()}}
+try{await start();assert.equal((await request('/api/records')).status,401);assert.equal((await request('/')).status,303);assert.equal((await login('wrong-password')).status,401);const session=await login();assert.equal(session.status,303);assert.ok(session.headers.get('set-cookie').includes('HttpOnly'));
+const recipe=newRecord('recipe');recipe.name='Проверочный рецепт';recipe.parts[0].name='Ганаш';recipe.parts[0].ingredients=[{name:'Сливки 33%',qty:.5,unit:'кг',note:''},{name:'Ваниль',qty:.5,unit:'г',note:''}];let r=await save(recipe);assert.equal(r.status,200);const saved=r.body;assert.equal(saved.revision,1);
+const component={...newRecord('component'),name:'Библиотечный ганаш',parts:structuredClone(recipe.parts)};const c=await save(component);assert.equal(c.status,200);saved.parts[0].sourceId=c.body.id;saved.parts[0].sourceRevision=c.body.revision;let updated=await save(saved);assert.equal(updated.body.revision,2);assert.equal((await save({...saved,name:'Устаревший'})).status,409);
+assert.equal((await save({...newRecord('recipe'),name:'Ошибка',servings:-1})).status,400);
+const list={...newRecord('list'),name:'Тестовый список',items:aggregate([{recipe:saved,factor:.5}])};assert.equal(list.items.find(i=>i.name==='Ваниль').qty,.25);assert.equal((await save(list)).status,200);
+const lab={...newRecord('lab'),name:'Тест разработки',tests:[{id:'test-1',date:'2026-10-26',recipe:structuredClone(saved),result:'Хорошо'}]};assert.equal((await save(lab)).status,200);
+const fd=new FormData();fd.append('photo',new Blob([await readFile('icon-192.png')],{type:'image/png'}),'photo.png');const up=await request('/api/photos',{method:'POST',body:fd});assert.equal(up.status,200);const image=(await up.json()).url;assert.equal((await request(image)).status,200);assert.equal((await fetch(base+image)).status,401);
+const csrf=await request('/api/records',{method:'POST',headers:{Origin:'https://other.example','Content-Type':'application/json'},body:JSON.stringify(saved)});assert.equal(csrf.status,403);
+const pw=await request('/api/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current:password,password:changed})});assert.equal(pw.status,200);await stop();await start();assert.equal((await request(image)).status,200);const all=await (await request('/api/records')).json();assert.equal(all.records.length,4);assert.equal(all.records.find(v=>v.id===saved.id).parts[0].ingredients[1].qty,.5);assert.equal(all.records.find(v=>v.id===lab.id).tests[0].recipe.parts[0].ingredients[1].qty,.5);cookie='';assert.equal((await login(changed)).status,303);
+const del=await request('/api/records',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:saved.id,revision:2})});assert.equal(del.status,200);await request('/logout');cookie='';assert.equal((await request('/api/records')).status,401);console.log('Проверены вход, выход, защита запросов, рецепты, версии компонентов, история тестов, покупки, фото, смена пароля и сохранение после перезапуска.');
+}finally{await stop();await rm(dir,{recursive:true,force:true})}

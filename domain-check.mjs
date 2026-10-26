@@ -1,0 +1,5 @@
+import assert from 'node:assert/strict';
+import {aggregate,parseText,newRecord} from './domain.ts';
+const r={parts:[{ingredients:[{name:'Сливки 33%',qty:500,unit:'г'},{name:'сливки 33%',qty:.5,unit:'кг'},{name:'Белый шоколад',qty:150,unit:'г'},{name:'Тёмный шоколад',qty:100,unit:'г'},{name:'Ваниль',qty:.5,unit:'г'}]}]};
+const rows=aggregate([{recipe:r,factor:.5}]);assert.equal(rows.find(i=>i.name==='Сливки 33%').qty,500);assert.equal(rows.find(i=>i.name==='Ваниль').qty,.25);assert.equal(rows.length,4);assert.equal(r.parts[0].ingredients[0].qty,500);
+const p=parseText('Тестовый тарт\nКрем:\nСливки 33% — 250,5 г\n0,5 г Ваниль\nНагреть до 80 °C.\nОснова:\nМука — 100 г\nВыпекать 20 минут.');assert.equal(p.name,'Тестовый тарт');assert.equal(p.parts.length,2);assert.equal(p.parts[0].ingredients[0].qty,250.5);assert.equal(p.parts[0].ingredients[1].qty,.5);assert.equal(p.parts[0].steps[0],'Нагреть до 80 °C.');console.log('Проверено: дробные количества, объединение г/кг, разделение разновидностей, неизменность оригинала, импорт компонентов и технологии.');
